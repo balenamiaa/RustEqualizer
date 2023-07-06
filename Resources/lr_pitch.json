@@ -1,0 +1,38 @@
+[
+    {
+        "time": 0.0,
+        "value": 0.0,
+        "inSlope": 2.08445573,
+        "outSlope": 2.08445573,
+        "weightedMode": 0,
+        "inWeight": 0.333333343,
+        "outWeight": 0.333333343
+    },
+    {
+        "time": 0.16275616,
+        "value": 0.479440838,
+        "inSlope": 2.26301861,
+        "outSlope": 2.26301861,
+        "weightedMode": 0,
+        "inWeight": 0.333333343,
+        "outWeight": 0.333333343
+    },
+    {
+        "time": 0.4218853,
+        "value": 0.810068369,
+        "inSlope": 0.542224646,
+        "outSlope": 0.542224646,
+        "weightedMode": 0,
+        "inWeight": 0.333333343,
+        "outWeight": 0.333333343
+    },
+    {
+        "time": 1.0,
+        "value": 1.0,
+        "inSlope": 0.405655444,
+        "outSlope": 0.405655444,
+        "weightedMode": 0,
+        "inWeight": 0.333333343,
+        "outWeight": 0.333333343
+    }
+]

@@ -1,0 +1,29 @@
+[
+    {
+        "time": 0.0,
+        "value": 0.0,
+        "inSlope": 2.08445573,
+        "outSlope": 2.08445573,
+        "weightedMode": 0,
+        "inWeight": 0.333333343,
+        "outWeight": 0.333333343
+    },
+    {
+        "time": 0.300054729,
+        "value": 0.547922254,
+        "inSlope": 1.23254955,
+        "outSlope": 1.23254955,
+        "weightedMode": 0,
+        "inWeight": 0.333333343,
+        "outWeight": 0.333333343
+    },
+    {
+        "time": 1.0,
+        "value": 1.0,
+        "inSlope": 0.405655444,
+        "outSlope": 0.405655444,
+        "weightedMode": 0,
+        "inWeight": 0.333333343,
+        "outWeight": 0.333333343
+    }
+]

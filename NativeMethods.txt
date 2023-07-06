@@ -1,0 +1,4 @@
+Kernel32.*
+User32.*
+VK_*
+MOUSEEVENTF_*
