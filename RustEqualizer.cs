@@ -1,161 +1,5 @@
 /*
 
-message_handler!(context::Context, message::ChangeWeapon) = context.current_weapon = message.new_weapon
-message_handler!(context::Context, message::ChangeAttachment) = context.current_attachment = message.new_attachment
-message_handler!(context::Context, _::ToggleEnabled) = context.enabled = !context.enabled
-
-function reset!(info::TransientRecoilInformation)
-    info.num_shots_fired = 0
-    info.current_viewangles = zero(Vec2d)
-end
-
-function _calculate_punch_curve(player_status::PlayerStatus, num_shots_fired, nbullets)
-    curve = Weapon.WEAPON_ANIMATIONCURVE[][player_status.weapon_kind]
-    scalar = Weapon.WEAPON_BASELINE_SCALAR[][player_status.weapon_kind] * Weapon.ATTACHMENT_RCS_MULTIPLIER[][player_status.adsattachment_kind]
-
-    t = num_shots_fired / nbullets
-    vec2(curve.yaw(t), curve.pitch(t)) .* scalar
-end
-
-function _calculate_punch_nocurve(player_status::PlayerStatus)
-    scalar =
-        (player_status.is_ducked ? 0.5 : 1.0) *
-        (player_status.is_ads ? Weapon.WEAPON_ADSSCALE[][player_status.weapon_kind] : 1.0) *
-        Weapon.ATTACHMENT_RCS_MULTIPLIER[][player_status.adsattachment_kind] *
-        (player_status.is_moving ? (1.0 + Weapon.WEAPON_MOVEMENT_PENALTY[][player_status.weapon_kind]) : 1.0)
-
-    Weapon.WEAPON_BASELINE_SCALAR[][player_status.weapon_kind] .* scalar
-end
-
-function control_recoil(context::Context, info::TransientRecoilInformation)
-    is_curvebased = Weapon.WEAPON_ISCURVEBASED[][context.current_weapon]
-    _control_recoil(context, info, Val(is_curvebased))
-end
-
-function _control_recoil(context::Context, info::TransientRecoilInformation, is_curvebased::Val{true})
-    time_per_shot_ms = Weapon.WEAPON_TIMEPERSHOT_MS[][context.current_weapon]
-    nbullets = Weapon.WEAPON_NUM_BULLETS[][context.current_weapon]
-
-    delta_last_shot_time_ms = WinApi.time_ms() - info.last_shot_time_ms
-    (delta_last_shot_time_ms > 2 * time_per_shot_ms) && reset!(info)
-
-    while WinApi.check_key_down(WinApi.VK_LBUTTON)
-        shoot!(info, nbullets) #first shot already fired
-
-        player_status = playerstatus(context)
-        game_status = gamestatus(context)
-
-        punch = _calculate_punch_curve(player_status, info.num_shots_fired, nbullets)
-        delta_angle = map(-, punch) - info.current_viewangles
-        control_time = round(Int64, LinearAlgebra.norm(delta_angle) / 0.02)
-
-        overflow_counter = zero(Vec2d)
-
-        current_time = Int64(0)
-        prev_time = Int64(0)
-        timer = WinApi.WinTimer()
-
-        while current_time < control_time
-            current_time = WinApi.elapsed_ms(timer)
-            delta_time_ms = current_time - prev_time
-
-            delta_angle_chunk = delta_angle * (delta_time_ms / control_time)
-            delta_pixel_chunk = δangle_to_δpixel(delta_angle_chunk, game_status, player_status)
-            overflow_counter = move_mouse_overflow(delta_pixel_chunk, overflow_counter)
-
-            prev_time = current_time
-        end
-
-        info.current_viewangles = info.current_viewangles + delta_angle
-
-        excess = time_per_shot_ms - WinApi.elapsed_ms(timer)
-        excess > 0 && WinApi.sleep_ms(excess)
-    end
-end
-
-function _control_recoil(context::Context, info::TransientRecoilInformation, is_curvebased::Val{false})
-    is_auto = Weapon.WEAPON_ISAUTOMATIC[][context.current_weapon]
-    __control_recoil_nocurve(context, info, Val(is_auto))
-end
-
-function __control_recoil_nocurve(context::Context, info::TransientRecoilInformation, is_auto::Val{true})
-    time_per_shot_ms = Weapon.WEAPON_TIMEPERSHOT_MS[][context.current_weapon]
-    control_time = time_per_shot_ms
-
-    while WinApi.check_key_down(WinApi.VK_LBUTTON)
-
-        info.current_time_ms = WinApi.time_ms()
-        if info.current_time_ms - info.last_time_ms < time_per_shot_ms
-            return
-        end
-
-        player_status = playerstatus(context)
-        game_status = gamestatus(context)
-
-        punch = _calculate_punch_nocurve(player_status)
-        delta_angle = map(-, punch)
-
-        overflow_counter = zero(Vec2d)
-
-        current_time = Int64(0)
-        prev_time = Int64(0)
-        timer = WinApi.WinTimer()
-
-        while current_time < control_time
-            current_time = WinApi.elapsed_ms(timer)
-            delta_time_ms = current_time - prev_time
-
-            delta_angle_chunk = delta_angle * (delta_time_ms / control_time)
-            delta_pixel_chunk = δangle_to_δpixel(delta_angle_chunk, game_status, player_status)
-            overflow_counter = move_mouse_overflow(delta_pixel_chunk, overflow_counter)
-
-            prev_time = current_time
-        end
-        info.last_time_ms = info.current_time_ms
-        info.current_viewangles = info.current_viewangles + delta_angle
-    end
-end
-
-function __control_recoil_nocurve(context::Context, info::TransientRecoilInformation, is_auto::Val{false})
-    time_per_shot_ms = Weapon.WEAPON_TIMEPERSHOT_MS[][context.current_weapon]
-    control_time = time_per_shot_ms
-    
-    while WinApi.check_key_down(WinApi.VK_LBUTTON)
-        WinApi.sleep_ms(5)
-        send_repeat_button(context)
-
-        info.current_time_ms = WinApi.time_ms()
-        if info.current_time_ms - info.last_time_ms < time_per_shot_ms
-            return
-        end
-
-        player_status = playerstatus(context)
-        game_status = gamestatus(context)
-
-        punch = _calculate_punch_nocurve(player_status)
-        delta_angle = map(-, punch)
-
-        overflow_counter = zero(Vec2d)
-
-        current_time = Int64(0)
-        prev_time = Int64(0)
-        timer = WinApi.WinTimer()
-
-        while current_time < control_time
-            current_time = WinApi.elapsed_ms(timer)
-            delta_time_ms = current_time - prev_time
-
-            delta_angle_chunk = delta_angle * (delta_time_ms / control_time)
-            delta_pixel_chunk = δangle_to_δpixel(delta_angle_chunk, game_status, player_status)
-            overflow_counter = move_mouse_overflow(delta_pixel_chunk, overflow_counter)
-
-            prev_time = current_time
-        end
-        info.last_time_ms = info.current_time_ms
-        info.current_viewangles = info.current_viewangles + delta_angle
-    end
-end
-
 function main()
     config_fileio = open("config.json", "r")
     userdata::UserData = JSON3.read(config_fileio, UserData)
@@ -219,6 +63,7 @@ convert the above Julia code to C#
 
 namespace RustEQ;
 
+using System.ComponentModel;
 using System.Numerics;
 using System.Reflection;
 using System.Runtime.Versioning;
@@ -241,23 +86,6 @@ struct GameStatus
     public float Sensitivity { get; set; }
     public bool RCSEnabled { get; set; }
 }
-
-/*
-
-abstract type AbstractMessage end
-
-struct ChangeAttachment <: AbstractMessage
-    new_attachment::UInt8
-end
-
-struct ChangeWeapon <: AbstractMessage
-    new_weapon::UInt8
-end
-
-struct ToggleEnabled <: AbstractMessage end
-struct LeftMBClicked <: AbstractMessage end
-
-*/
 
 public abstract record AbstractMessage { }
 
@@ -322,7 +150,7 @@ public class UserData
 }
 
 
-public struct TransientRecoilInformation
+public class TransientRecoilInformation
 {
     public long NumShortsFired { get; set; }
     public long LastShotTimeMs { get; set; }
@@ -335,6 +163,48 @@ public struct TransientRecoilInformation
         NumShortsFired = 0;
         CurrentViewangles = Vector2.Zero;
     }
+}
+
+
+[SupportedOSPlatform("windows7.0")]
+public struct HighFreqTimer
+{
+    public long Start { get; set; }
+
+    public HighFreqTimer()
+    {
+        if (RqWin.QueryPerformanceCounter(out var performanceCounter) == 0)
+        {
+            throw new Win32Exception();
+        }
+
+        Start = performanceCounter;
+    }
+
+    public long Elapsed
+    {
+        get
+        {
+            if (RqWin.QueryPerformanceCounter(out var currentCounter) == 0)
+            {
+                throw new Win32Exception();
+            }
+
+            return (currentCounter - Start) / TicksPerMs;
+        }
+    }
+
+    private static long GetTicksPerMs()
+    {
+        if (RqWin.QueryPerformanceFrequency(out var ticksPerSecond) == 0)
+        {
+            throw new Win32Exception();
+        }
+
+        return ticksPerSecond / 1000;
+    }
+
+    public static readonly long TicksPerMs = GetTicksPerMs();
 }
 
 
@@ -441,6 +311,39 @@ public class RustEqualizer
         RqWin.SendInput(inputs, 1);
     }
 
+    private static long GetCurrentTimeMs()
+    {
+        if (RqWin.QueryPerformanceCounter(out var performanceCounter) == 0)
+        {
+            throw new Win32Exception();
+        }
+
+        return performanceCounter / HighFreqTimer.TicksPerMs;
+    }
+
+    private static void SleepMsHighFrequency(long ms)
+    {
+        var sleepTicks = ms * HighFreqTimer.TicksPerMs;
+
+        if (RqWin.QueryPerformanceCounter(out var baseCounter) == 0)
+        {
+            throw new Win32Exception();
+        }
+
+        if (RqWin.QueryPerformanceCounter(out var currentCounter) == 0)
+        {
+            throw new Win32Exception();
+        }
+
+        while (currentCounter < baseCounter + sleepTicks)
+        {
+            if (RqWin.QueryPerformanceCounter(out currentCounter) == 0)
+            {
+                throw new Win32Exception();
+            }
+        }
+    }
+
 
     private Vector2 MoveMouseWithOverflow(Vector2 deltaChange, Vector2 overflowCounter)
     {
@@ -470,6 +373,26 @@ public class RustEqualizer
         fov /= PlayerStatus.IsADS ? zoom : 1;
 
         return deltaAngle.DivideByScalar(0.03f * (GameStatus.Sensitivity * 3) * (fov / 100));
+    }
+
+
+    private Vector2 CalculatePunchCurve(long numShotsFired, long nBullets)
+    {
+        var curve = Weapons.WEAPON_ANIMATIONCURVE[PlayerStatus.WeaponKind];
+        var scalar = Weapons.WEAPON_BASELINE_SCALAR[PlayerStatus.WeaponKind] * Weapons.ATTACHMENT_RCS_MULTIPLIER[PlayerStatus.ADSAttachmentKind];
+        var t = numShotsFired / nBullets;
+
+        return new Vector2((float)curve.yaw.Evaluate(t), (float)curve.pitch.Evaluate(t)) * scalar;
+    }
+
+    private Vector2 CalculatePunchNoCurve()
+    {
+        var scalar = (PlayerStatus.IsDucked ? 0.5f : 1.0f) *
+            (PlayerStatus.IsADS ? Weapons.WEAPON_ADSSCALE[PlayerStatus.WeaponKind] : 1.0f) *
+            Weapons.ATTACHMENT_RCS_MULTIPLIER[PlayerStatus.ADSAttachmentKind] *
+            (PlayerStatus.IsMoving ? (1.0f + Weapons.WEAPON_MOVEMENT_PENALTY[PlayerStatus.WeaponKind]) : 1.0f);
+
+        return Weapons.WEAPON_BASELINE_SCALAR[PlayerStatus.WeaponKind] * scalar;
     }
 
 
@@ -548,15 +471,168 @@ public class RustEqualizer
         }
     }
 
-    private void ControlRecoilCurveBased() { }
-    private void ControlRecoilNotCurveBased() { }
+    private void ControlRecoilCurveBased()
+    {
+        var timePerShotMs = Weapons.WEAPON_TIMEPERSHOT_MS[CurrentWeapon];
+        var nBullets = Weapons.WEAPON_NUM_BULLETS[CurrentWeapon];
+
+        var deltaLastShotTimeMs = GetCurrentTimeMs() - TransientRecoilInformation.LastShotTimeMs;
+        if (deltaLastShotTimeMs > 2 * timePerShotMs)
+        {
+            TransientRecoilInformation.Reset();
+        }
+
+        while (IsKeyDown((ushort)VIRTUAL_KEY.VK_LBUTTON))
+        {
+            Shoot(nBullets);
+
+            Vector2 punch = CalculatePunchCurve(TransientRecoilInformation.NumShortsFired, nBullets);
+            Vector2 deltaAngle = -punch - TransientRecoilInformation.CurrentViewangles;
+            long controlTime = (long)Math.Round(deltaAngle.Length() / 0.02f);
+
+            Vector2 overflowCounter = Vector2.Zero;
+
+            long currentTime = 0;
+            long prevTime = 0;
+            while (currentTime < controlTime)
+            {
+                currentTime = GetCurrentTimeMs();
+                long deltaTimeMs = currentTime - prevTime;
+
+                Vector2 deltaAngleChunk = deltaAngle * (deltaTimeMs / controlTime);
+                Vector2 deltaPixelChunk = DeltaAngleToDeltaPixel(deltaAngleChunk);
+                overflowCounter = MoveMouseWithOverflow(deltaPixelChunk, overflowCounter);
+
+                prevTime = currentTime;
+            }
+
+            TransientRecoilInformation.CurrentViewangles += deltaAngle;
+
+            long excess = timePerShotMs - GetCurrentTimeMs();
+            if (excess > 0)
+            {
+                SleepMsHighFrequency(excess);
+            }
+        }
+
+
+
+    }
+    private void ControlRecoilNotCurveBased()
+    {
+        bool isAuto = Weapons.WEAPON_ISAUTOMATIC[CurrentWeapon];
+
+        if (isAuto)
+        {
+            ControlRecoilNotCurveBasedAuto();
+        }
+        else
+        {
+            ControlRecoilNotCurveBasedSemi();
+        }
+    }
+
+    private void ControlRecoilNotCurveBasedAuto()
+    {
+        /*
+        time_per_shot_ms = Weapon.WEAPON_TIMEPERSHOT_MS[][context.current_weapon]
+    control_time = time_per_shot_ms
+
+    while WinApi.check_key_down(WinApi.VK_LBUTTON)
+
+        info.current_time_ms = WinApi.time_ms()
+        if info.current_time_ms - info.last_time_ms < time_per_shot_ms
+            return
+        end
+
+        player_status = playerstatus(context)
+        game_status = gamestatus(context)
+
+        punch = _calculate_punch_nocurve(player_status)
+        delta_angle = map(-, punch)
+
+        overflow_counter = zero(Vec2d)
+
+        current_time = Int64(0)
+        prev_time = Int64(0)
+        timer = WinApi.WinTimer()
+
+        while current_time < control_time
+            current_time = WinApi.elapsed_ms(timer)
+            delta_time_ms = current_time - prev_time
+
+            delta_angle_chunk = delta_angle * (delta_time_ms / control_time)
+            delta_pixel_chunk = δangle_to_δpixel(delta_angle_chunk, game_status, player_status)
+            overflow_counter = move_mouse_overflow(delta_pixel_chunk, overflow_counter)
+
+            prev_time = current_time
+        end
+        info.last_time_ms = info.current_time_ms
+        info.current_viewangles = info.current_viewangles + delta_angle
+    end
+    */
+
+        var timePerShotMs = Weapons.WEAPON_TIMEPERSHOT_MS[CurrentWeapon];
+        var controlTime = timePerShotMs;
+
+        while (IsKeyDown((ushort)VIRTUAL_KEY.VK_LBUTTON))
+        {
+            TransientRecoilInformation.CurrentTimeMs = GetCurrentTimeMs();
+            if (TransientRecoilInformation.CurrentTimeMs - TransientRecoilInformation.LastShotTimeMs < timePerShotMs)
+            {
+                return;
+            }
+
+            
+        }
+    }
+
+    private void ControlRecoilNotCurveBasedSemi()
+    {
+
+        var timePerShotMs = Weapons.WEAPON_TIMEPERSHOT_MS[CurrentWeapon];
+        var controlTime = timePerShotMs;
+
+        while (IsKeyDown((ushort)VIRTUAL_KEY.VK_LBUTTON))
+        {
+            SleepMsHighFrequency(5);
+            SendRepeatButton();
+
+            TransientRecoilInformation.CurrentTimeMs = GetCurrentTimeMs();
+            if (TransientRecoilInformation.CurrentTimeMs - TransientRecoilInformation.LastShotTimeMs < timePerShotMs)
+            {
+                return;
+            }
+
+            var punch = CalculatePunchNoCurve();
+            var deltaAngle = -punch;
+
+            var overflowCounter = Vector2.Zero;
+            long currentTime = 0;
+            long prevTime = 0;
+            var timer = new HighFreqTimer();
+
+            while (currentTime < controlTime)
+            {
+                currentTime = timer.Elapsed;
+                var deltaTimeMs = currentTime - prevTime;
+
+                var deltaAngleChunk = deltaAngle * (deltaTimeMs / controlTime);
+                var deltaPixelChunk = DeltaAngleToDeltaPixel(deltaAngleChunk);
+                overflowCounter = MoveMouseWithOverflow(deltaPixelChunk, overflowCounter);
+
+                prevTime = currentTime;
+            }
+
+            TransientRecoilInformation.LastTimeMs = TransientRecoilInformation.CurrentTimeMs;
+            TransientRecoilInformation.CurrentViewangles += deltaAngle;
+        }
+    }
 
     public void Start()
     {
 
     }
-
-
 
     private bool IsActivated => IsKeyDown(ActivationKey);
     private ushort ActivationKey { get; set; }
